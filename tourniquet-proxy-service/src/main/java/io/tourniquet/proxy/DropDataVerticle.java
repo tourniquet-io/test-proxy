@@ -5,6 +5,9 @@ import java.time.Instant;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.eventbus.Message;
 
+/**
+ * Data handler that drops packages by sending an empty buffer
+ */
 public class DropDataVerticle extends DataHandlerVerticle {
 
     private final Buffer EMPTY = Buffer.buffer();
@@ -15,14 +18,8 @@ public class DropDataVerticle extends DataHandlerVerticle {
     }
 
     @Override
-    protected void handleIncoming(final Message<Buffer> inMsg) {
-        vertx.eventBus().publish("/monitor", Instant.now() + " Dropping incoming data of length " + inMsg.body().length());
-        inMsg.reply(EMPTY);
-    }
-
-    @Override
-    protected void handleOutgoing(final Message<Buffer> outMsg) {
-        vertx.eventBus().publish("/monitor", Instant.now() + " Dropping outgoing data of length " + outMsg.body().length());
+    protected void handleData(final Message<Buffer> outMsg) {
+        vertx.eventBus().publish("/monitor", Instant.now() + " Dropping data of length " + outMsg.body().length());
         outMsg.reply(EMPTY);
     }
 

@@ -27,7 +27,7 @@
         </ul></li>
         <li class="responses">Responses:<ul>
             <li><span id="responseBytes"></span> Bytes received</li>
-            <li><span id="responseBytesTransmitted"></span>Bytes transmitted</li>
+            <li><span id="responseBytesTransmitted"></span> Bytes transmitted</li>
             <li><span id="responseBytesDropped"></span> Bytes dropped</li>
         </ul></li>
     </ul>
@@ -42,7 +42,6 @@
                 <div class="fa toggle"><span class="status"></span></div>
             </div>
             <ul class="handler-list outgoing">
-                <li><input id="noop_outgoing" type="radio" class="handler" name="outgoing" value="" checked/><label for="noop_outgoing">No-Op</label></li>
             </ul>
             <form class="reset-timer outgoing" onsubmit="return setTTR('outgoing', this)">
                 <label for="outgoingTTR">Reset after (min)</label>
@@ -59,7 +58,6 @@
                 <div class="fa toggle"><span class="status"></span></div>
             </div>
             <ul class="handler-list incoming">
-                <li><input id="noop_incoming" type="radio" class="handler" name="incoming" value="" checked/><label for="noop_incoming">No-Op</label></li>
             </ul>
             <form class="reset-timer incoming" onsubmit="return setTTR('incoming', this)">
                 <label for="outgoingTTR">Reset after (min)</label>

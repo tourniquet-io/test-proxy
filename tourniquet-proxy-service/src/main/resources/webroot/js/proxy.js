@@ -7,18 +7,24 @@ String.prototype.supplant = function (o) {
     );
 };
 
-
 function normalizeId(handler) {
     return handler.replace("/", "_");
 }
-function initList(handlers, activeHandler, dir) {
-    for (var i = 0; i < handlers.length; i++) {
-        var handler = handlers[i];
+function initList(config, dir) {
+
+    function handlerEntry(handlerId, handler, dir, checked, label) {
+        return '<li><input id="{handlerId}" type="radio" class="handler" name="{dir}" {checked} value="{handler}" onclick="selectHandler(this.name, this.value)"/><label for="{handlerId}">{label}</label></li>'
+            .supplant({handlerId: handlerId, handler: handler, dir: dir, checked: checked, label: label});
+    }
+
+
+    var handlerList = $('ul.handler-list.' + dir);
+    handlerList.append(handlerEntry("noop_" + dir, "", dir, "checked", "No-Op"));
+    for (var i = 0; i < config.handlers.length; i++) {
+        var handler = config.handlers[i];
         var handlerId = normalizeId(handler);
-        var checked = handler === activeHandler ? "checked" : "";
-        $('ul.handler-list.' + dir).append(
-            '<li><input id="{handlerId}" type="radio" class="handler" name="{dir}" {checked} value="{handler}"/><label for="{handlerId}">{handler}</label></li>'
-                .supplant({handlerId : handlerId, handler: handler, dir: dir, checked: checked}));
+        var checked = handler === config[dir] ? "checked" : "";
+        handlerList.append(handlerEntry(handlerId, handler, dir, checked, handler));
     }
 }
 
@@ -125,10 +131,8 @@ $(document).ready(function () {
         updateGlobalToggles(config, "incoming");
         updateGlobalToggles(config, "outgoing");
 
-        initList(config.incomingHandlers, config.incoming, "incoming");
-        initList(config.outgoingHandlers, config.outgoing, "outgoing");
-
-        $('input[class="handler"]').attr("onclick", 'selectHandler(this.name, this.value)');
+        initList(config, "incoming");
+        initList(config, "outgoing");
     });
 
 });

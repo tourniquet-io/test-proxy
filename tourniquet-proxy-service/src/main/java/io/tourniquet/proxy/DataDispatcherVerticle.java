@@ -1,109 +1,107 @@
 package io.tourniquet.proxy;
 
+import static java.util.stream.Collectors.toList;
 import static org.slf4j.LoggerFactory.getLogger;
 
-import java.util.HashSet;
-import java.util.Set;
-import java.util.function.Supplier;
-import java.util.stream.Collectors;
+import java.util.HashMap;
+import java.util.Map;
 
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Handler;
 import io.vertx.core.buffer.Buffer;
+import io.vertx.core.eventbus.EventBus;
 import io.vertx.core.eventbus.Message;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
 
+/**
+ * Dispatcher that directs processing data to a configurable data handlers. All data handlers can be assigned to either
+ * outgoing requests or incoming responses. Data Handlers may register themselves at the data dispatcher after startup.
+ * And may be used afterwards. During startup ensure that the data handlers are only deployed after the data dispatcher
+ * is deployed to ensure they register correctly. The configuration of the dispatcher can be read through the
+ * 'dispatcher/config' address. Data can be processed and dispatched through the 'incoming' and 'outgoing' address (see
+ * link {@link TransmissionDirection})
+ */
 public class DataDispatcherVerticle extends AbstractVerticle {
 
-    private static final Logger LOG = getLogger(DataDispatcherVerticle.class);
+   private static final Logger LOG = getLogger(DataDispatcherVerticle.class);
 
-    private Set<String> incomingHandlers = new HashSet<>();
-    private Set<String> outgoingHandlers = new HashSet<>();
+   /**
+    * Registry of all available handlers. Each handler can be used for incoming or outgoing traffic
+    */
+   private Map<String, Handler<Message<Buffer>>> handlerRegistry = new HashMap<>();
+   /**
+    * Mapping of transmission directions to a current handler address.
+    */
+   private Map<TransmissionDirection, String> currentHandler = new HashMap<>();
 
-    private String incoming = "";
-    private String outgoing = "";
+   private static final String NOOP_ADDR = "";
 
-    @Override
-    public void start() throws Exception {
+   @Override
+   public void start() throws Exception {
 
-        vertx.eventBus().consumer("incoming", dispatch(() -> incoming));
-        vertx.eventBus().consumer("dispatcher/incoming/set", this::setIncoming);
-        vertx.eventBus().consumer("dispatcher/incoming/register", this::registerIncoming);
+      this.handlerRegistry.put(NOOP_ADDR, msg -> msg.reply(msg.body()));
 
-        vertx.eventBus().consumer("outgoing", dispatch(() -> outgoing));
-        vertx.eventBus().consumer("dispatcher/outgoing/set", this::setOutgoing);
-        vertx.eventBus().consumer("dispatcher/outgoing/register", this::registerOutgoing);
+      final EventBus eb = vertx.eventBus();
+      for (TransmissionDirection dir : TransmissionDirection.values()) {
+         this.currentHandler.put(dir, NOOP_ADDR);
+         eb.consumer(dir.getAddress(), dispatch(dir));
+         eb.consumer("dispatcher/" + dir.getAddress() + "/set", setHandler(dir));
+      }
 
-        vertx.eventBus()
-             .consumer("dispatcher/config",
-                       msg -> msg.reply(new JsonObject().put("incoming", incoming)
-                                                        .put("outgoing", outgoing)
-                                                        .put("incomingHandlers", new JsonArray(incomingHandlers.stream().collect(Collectors.toList())))
-                                                        .put("outgoingHandlers", new JsonArray(outgoingHandlers.stream().collect(Collectors.toList())))));
+      eb.consumer("dispatcher/register", this::registerHandler);
+      eb.consumer("dispatcher/config",
+                  msg -> msg.reply(new JsonObject().put("incoming", this.currentHandler.get(TransmissionDirection.RCV))
+                                                   .put("outgoing", this.currentHandler.get(TransmissionDirection.SND))
+                                                   .put("handlers",
+                                                        new JsonArray(handlerRegistry.keySet()
+                                                                                     .stream()
+                                                                                     .filter(h -> !h.isEmpty())
+                                                                                     .collect(toList())))));
 
-    }
+   }
 
-    private Handler<Message<Buffer>> dispatch(final Supplier<String> addr) {
+   private Handler<Message<Buffer>> dispatch(TransmissionDirection dir) {
 
-        return msg -> dispatch(msg, addr.get());
+      return msg -> handlerRegistry.get(currentHandler.get(dir)).handle(msg);
+   }
 
-    }
+   private Handler<Message<String>> setHandler(TransmissionDirection dir) {
 
-    private void dispatch(final Message<Buffer> msg, final String addr) {
-
-        if (!addr.isEmpty()) {
-            vertx.eventBus().send(addr, msg.body(), reply -> {
-                if (reply.succeeded()) {
-                    msg.reply(reply.result().body());
-                } else {
-                    msg.fail(500, reply.cause().getMessage());
-                    LOG.warn("Could not process data", reply.cause());
-                }
-            });
-        } else {
-            msg.reply(msg.body());
-        }
-    }
-
-    private void setIncoming(final Message<String> msg) {
-
-        String addr = msg.body();
-        if (this.incomingHandlers.contains(addr) || addr.isEmpty()) {
-            this.incoming = addr;
+      return msg -> {
+         final String handlerAddress = msg.body();
+         if (handlerRegistry.containsKey(handlerAddress)) {
+            this.currentHandler.put(dir, handlerAddress);
             msg.reply("ok");
-        } else {
-            msg.fail(400, "Unknown handler " + addr);
-        }
-    }
+         } else {
+            msg.fail(400, "Unknown handler " + handlerAddress);
+         }
+      };
+   }
 
-    private void setOutgoing(final Message<String> msg) {
+   private void registerHandler(Message<String> msg) {
 
-        String addr = msg.body();
-        if (this.outgoingHandlers.contains(addr) || addr.isEmpty()) {
-            this.outgoing = addr;
-            msg.reply("ok");
-        } else {
-            msg.fail(400, "Unknown handler " + addr);
-        }
-    }
+      final String handlerAddress = msg.body();
+      if (handlerAddress.isEmpty()) {
+         msg.fail(400, "Handler address must not be empty");
+      } else {
+         this.handlerRegistry.put(handlerAddress, processData(handlerAddress));
+         LOG.info("Registered handler '{}'", handlerAddress);
+         msg.reply("ok");
+      }
+   }
 
-    private void registerIncoming(final Message<String> msg) {
+   private Handler<Message<Buffer>> processData(String addr) {
 
-        final String handler = msg.body();
-        this.incomingHandlers.add(handler);
-        LOG.info("Registered handler '{}'", handler);
-        msg.reply("ok");
-    }
-
-    private void registerOutgoing(final Message<String> msg) {
-
-        final String handler = msg.body();
-        this.outgoingHandlers.add(handler);
-        LOG.info("Registered handler '{}'", handler);
-        msg.reply("ok");
-
-    }
+      return msg -> vertx.eventBus().send(addr + "/data", msg.body(), reply -> {
+         if (reply.succeeded()) {
+            msg.reply(reply.result().body());
+         } else {
+            msg.fail(500, reply.cause().getMessage());
+            LOG.warn("Could not process data", reply.cause());
+         }
+      });
+   }
 
 }
