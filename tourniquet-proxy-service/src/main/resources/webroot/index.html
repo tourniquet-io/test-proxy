@@ -1,0 +1,81 @@
+<!DOCTYPE html >
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <title>TestProxy</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
+
+    <script src="js/jquery-3.2.1.min.js"></script>
+    <script src="js/sockjs-min-0.3.4.js"></script>
+    <script src="js/vertx-eventbus.js"></script>
+    <script src="js/proxy.js"></script>
+
+    <link rel="stylesheet" href="css/font-awesome.min.css">
+    <link rel="stylesheet" href="css/proxy.css">
+
+</head>
+
+<body>
+
+<h1 class="title">Test Proxy</h1>
+<div class="stats">
+    <ul>
+        <li>TotalRequests: <span id="totalRequests"></span></li>
+        <li class="requests">Requests:<ul>
+            <li><span id="requestBytes"> </span> Bytes received</li>
+            <li><span id="requestBytesTransmitted"></span> Bytes transmitted</li>
+            <li><span id="requestBytesDropped"></span> Bytes dropped</li>
+        </ul></li>
+        <li class="responses">Responses:<ul>
+            <li><span id="responseBytes"></span> Bytes received</li>
+            <li><span id="responseBytesTransmitted"></span>Bytes transmitted</li>
+            <li><span id="responseBytesDropped"></span> Bytes dropped</li>
+        </ul></li>
+    </ul>
+</div>
+<div class="config">
+
+    <div class="handler-config">
+        <div class="handler-panel outgoing">
+            <h2>Outgoing Data </h2>
+            <p class="description">requests from client to server</p>
+            <div class="global-state outgoing">Outgoing:
+                <div class="fa toggle"><span class="status"></span></div>
+            </div>
+            <ul class="handler-list outgoing">
+                <li><input id="noop_outgoing" type="radio" class="handler" name="outgoing" value="" checked/><label for="noop_outgoing">No-Op</label></li>
+            </ul>
+            <form class="reset-timer outgoing" onsubmit="return setTTR('outgoing', this)">
+                <label for="outgoingTTR">Reset after (min)</label>
+                <input id="outgoingTTR" type="number" name="ttr" min="1" max="14400"/>
+                <input type="submit" value="Submit"/>
+            </form>
+            <p class="reset-timer outgoing hidden"></p>
+
+        </div>
+        <div class="handler-panel incoming">
+            <h2>Incoming Data</h2>
+            <p class="description">responses from server to client</p>
+            <div class="global-state incoming">Incoming:
+                <div class="fa toggle"><span class="status"></span></div>
+            </div>
+            <ul class="handler-list incoming">
+                <li><input id="noop_incoming" type="radio" class="handler" name="incoming" value="" checked/><label for="noop_incoming">No-Op</label></li>
+            </ul>
+            <form class="reset-timer incoming" onsubmit="return setTTR('incoming', this)">
+                <label for="outgoingTTR">Reset after (min)</label>
+                <input id="incomingTTR" type="number" name="ttr" min="1" max="14400"/>
+                <input type="submit" value="Submit"/>
+            </form>
+            <p class="reset-timer incoming hidden"></p>
+        </div>
+    </div>
+</div>
+
+<div class="monitor">
+    <ul id="monitor">
+
+    </ul>
+</div>
+
+</body>
+</html>
