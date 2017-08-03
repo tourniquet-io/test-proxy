@@ -1,128 +1,118 @@
 package io.tourniquet.proxy.client;
 
-import static org.junit.Assert.assertEquals;
 import static org.slf4j.LoggerFactory.getLogger;
 
 import java.time.Duration;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
 
-import io.vertx.core.Vertx;
-import org.junit.After;
+import io.tourniquet.proxy.MainProxyVerticle;
+import io.vertx.core.DeploymentOptions;
+import io.vertx.core.json.JsonObject;
+import io.vertx.ext.unit.Async;
+import io.vertx.ext.unit.TestContext;
+import io.vertx.ext.unit.junit.RunTestOnContext;
+import io.vertx.ext.unit.junit.VertxUnitRunner;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.runner.RunWith;
 import org.slf4j.Logger;
 
+@RunWith(VertxUnitRunner.class)
 public class TestProxyClientIT {
 
-    private static final Logger LOG = getLogger(TestProxyClientIT.class);
+   @Rule
+   public RunTestOnContext rule = new RunTestOnContext();
 
-    private int configPort = 17099;
-    private TestProxyClient client;
-    private Vertx vertx;
+   private static final Logger LOG = getLogger(TestProxyClientIT.class);
 
-    @Before
-    public void setUp() throws Exception {
-//        JsonObject config = new JsonObject().put("proxyPort", 38080).put("configPort", configPort);
-//
-//        final CountDownLatch cdl = new CountDownLatch(4);
-//
-//        this.vertx = Vertx.vertx();
-//        vertx.deployVerticle(new HttpProxyVerticle(), new DeploymentOptions().setConfig(config), r -> cdl.countDown());
-//        vertx.deployVerticle(new ConfigVerticle(), new DeploymentOptions().setConfig(config), r -> cdl.countDown());
-//        vertx.deployVerticle(new DataDispatcherVerticle(), r -> {
-//            cdl.countDown();
-//            vertx.deployVerticle(new DropDataVerticle(), r2 -> cdl.countDown());
-//        });
-//
-//
-//        assertTrue(cdl.await(20, TimeUnit.SECONDS));
-//
-//        LOG.info("Proxy Started");
-//
-//        this.client = new TestProxyClient("localhost", configPort);
-        this.client = new TestProxyClient();
-    }
+   private int configPort = 17099;
+   private TestProxyClient client;
 
+   @Before
+   public void setUp(TestContext context) throws Exception {
 
+      final JsonObject config = new JsonObject().put("proxyPort", 38080).put("configPort", configPort);
 
-    @After
-    public void tearDown() throws Exception {
-        final CountDownLatch cdl = new CountDownLatch(1);
+      rule.vertx().deployVerticle(MainProxyVerticle.class.getName(), new DeploymentOptions().setConfig(config), context.asyncAssertSuccess());
 
-        vertx.close(r -> cdl.countDown());
-        cdl.await(20, TimeUnit.SECONDS);
-    }
+      this.client = new TestProxyClient("localhost", configPort);
+   }
 
-    @Test
-    public void getConfig() throws Exception {
+   @Test
+   public void getConfig() throws Exception {
 
-        Config config = client.getConfig();
-        System.out.println(config);
-    }
+      Config config = client.getConfig();
+      System.out.println(config);
+   }
 
-    @Test
-    public void testSetConfig_for_incoming() throws Exception {
-        Config config;
-        try {
-            config = client.getConfig();
-        } catch (Exception e){
-            e.printStackTrace();
-            throw new AssertionError(e);
-        }
+   @Test
+   public void testSetConfig_for_incoming(TestContext context) throws Exception {
 
-        String firstHandler = config.getHandlers().iterator().next();
-        Config newConfig = client.setIncoming(firstHandler);
-        assertEquals(firstHandler, newConfig.getIncoming());
+      Config config;
+      try {
+         config = client.getConfig();
+      } catch (Exception e) {
+         e.printStackTrace();
+         throw new AssertionError(e);
+      }
 
-    }
+      String firstHandler = config.getHandlers().iterator().next();
+      Config newConfig = client.setIncoming(firstHandler);
 
-    @Test
-    public void testSetConfig_for_outgoing() throws Exception {
-        Config config;
-        try {
-            config = client.getConfig();
-        } catch (Exception e){
-            e.printStackTrace();
-            throw new AssertionError(e);
-        }
+      context.assertEquals(firstHandler, newConfig.getIncoming());
 
-        String firstHandler = config.getHandlers().iterator().next();
-        Config newConfig = client.setOutgoing(firstHandler);
-        assertEquals(firstHandler, newConfig.getOutgoing());
-    }
+   }
 
-    @Test
-    public void testDisableIncoming() throws Exception {
-        Config newConfig = client.setIncoming("");
-        assertEquals("", newConfig.getIncoming());
-    }
+   @Test
+   public void testSetConfig_for_outgoing(TestContext context) throws Exception {
 
+      Config config;
+      try {
+         config = client.getConfig();
+      } catch (Exception e) {
+         e.printStackTrace();
+         throw new AssertionError(e);
+      }
 
-    @Test
-    public void testDisableOutgoing() throws Exception {
-        Config newConfig = client.setOutgoing("");
-        assertEquals("", newConfig.getOutgoing());
-    }
+      String firstHandler = config.getHandlers().iterator().next();
+      Config newConfig = client.setOutgoing(firstHandler);
 
-    @Test
-    public void testSetTTRforIncoming() throws Exception {
-        Config config = client.getConfig();
-        assertEquals("", config.getIncoming());
+      context.assertEquals(firstHandler, newConfig.getOutgoing());
+   }
 
-        String firstHandler = config.getHandlers().iterator().next();
-        Config newConfig = client.setIncoming(firstHandler);
-        assertEquals(firstHandler, newConfig.getIncoming());
+   @Test
+   public void testDisableIncoming(TestContext context) throws Exception {
 
-        client.setTimeToReset(Direction.INCOMING, Duration.ofMinutes(1));
+      Config newConfig = client.setIncoming("");
+      context.assertEquals("", newConfig.getIncoming());
+   }
 
-        long now = System.currentTimeMillis();
-        while(System.currentTimeMillis() - now < 65000){
-            Thread.sleep(1000);
-        }
-        config = client.getConfig();
-        assertEquals("", config.getIncoming());
+   @Test
+   public void testDisableOutgoing(TestContext context) throws Exception {
 
-    }
+      Config newConfig = client.setOutgoing("");
+      context.assertEquals("", newConfig.getOutgoing());
+   }
+
+   @Test
+   public void testSetTTRforIncoming(TestContext context) throws Exception {
+
+      final Config config = client.getConfig();
+      context.assertEquals("", config.getIncoming());
+
+      final String firstHandler = config.getHandlers().iterator().next();
+      final Config newConfig = client.setIncoming(firstHandler);
+      context.assertEquals(firstHandler, newConfig.getIncoming());
+
+      client.setTimeToReset(Direction.INCOMING, Duration.ofMinutes(1));
+
+      Async done = context.async();
+
+      rule.vertx().setTimer(62000, wakeup -> {
+         Config cfg = client.getConfig();
+         context.assertEquals("", cfg.getIncoming());
+         done.complete();
+      });
+   }
 
 }
