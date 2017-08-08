@@ -45,7 +45,8 @@ public class ConfigVerticle extends AbstractVerticle {
    public void start(final Future<Void> startFuture) throws Exception {
 
       final JsonObject config = config();
-      final HttpServerOptions opts = new HttpServerOptions().setPort(config.getInteger("configPort", 7099));
+      final int configPort = config.getInteger("configPort", 7099);
+      final HttpServerOptions opts = new HttpServerOptions().setPort(configPort);
 
       final Router router = Router.router(vertx);
       router.route().handler(BodyHandler.create());
@@ -58,7 +59,10 @@ public class ConfigVerticle extends AbstractVerticle {
                                   .bridge(new BridgeOptions().addOutboundPermitted(new PermittedOptions())));
       router.route().handler(StaticHandler.create());
 
-      vertx.createHttpServer(opts).requestHandler(router::accept).listen(complete -> startFuture.complete());
+      vertx.createHttpServer(opts).requestHandler(router::accept).listen(complete -> {
+         LOG.info("Configuration Handler startup complete, config listening on {}", configPort);
+         startFuture.complete();
+      });
    }
 
    private void postTTR(final RoutingContext ctx) {

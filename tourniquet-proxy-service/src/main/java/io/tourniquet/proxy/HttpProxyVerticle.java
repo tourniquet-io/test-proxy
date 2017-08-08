@@ -64,12 +64,13 @@ public class HttpProxyVerticle extends AbstractVerticle {
    public void start(final Future<Void> startFuture) throws Exception {
 
       JsonObject config = config();
+      final int httpPort = config.getInteger("proxyPort", 28080);
       this.netClient = vertx.createNetClient();
       this.httpClient = vertx.createHttpClient(new HttpClientOptions());
 
-      this.httpOpts = new HttpServerOptions().setPort(config.getInteger("proxyPort", 28080));
+      this.httpOpts = new HttpServerOptions().setPort(httpPort);
       this.httpServer = vertx.createHttpServer(httpOpts).requestHandler(this::processRequest).listen(result -> {
-         LOG.info("Proxy startup complete");
+         LOG.info("Proxy startup complete, Proxy listening on {}", httpPort);
          startFuture.complete();
       });
 
