@@ -64,7 +64,12 @@ public class DataDispatcherVerticle extends AbstractVerticle {
 
    private Handler<Message<Buffer>> dispatch(TransmissionDirection dir) {
 
-      return msg -> handlerRegistry.get(currentHandler.get(dir)).handle(msg);
+      return msg -> {
+         if(LOG.isTraceEnabled()){
+            LOG.trace("Dispatching message: {}", msg.body());
+         }
+         handlerRegistry.get(currentHandler.get(dir)).handle(msg);
+      };
    }
 
    private Handler<Message<String>> setHandler(TransmissionDirection dir) {
@@ -84,6 +89,9 @@ public class DataDispatcherVerticle extends AbstractVerticle {
 
       final String handlerAddress = msg.body();
       if (handlerAddress.isEmpty()) {
+         if(LOG.isTraceEnabled()){
+            LOG.trace("Empty handler not allows");
+         }
          msg.fail(400, "Handler address must not be empty");
       } else {
          this.handlerRegistry.put(handlerAddress, processData(handlerAddress));
@@ -96,10 +104,13 @@ public class DataDispatcherVerticle extends AbstractVerticle {
 
       return msg -> vertx.eventBus().send(addr + "/data", msg.body(), reply -> {
          if (reply.succeeded()) {
+            if(LOG.isTraceEnabled()){
+               LOG.trace("dispatching {} bytes", ((Buffer)reply.result().body()).length());
+            }
             msg.reply(reply.result().body());
          } else {
-            msg.fail(500, reply.cause().getMessage());
             LOG.warn("Could not process data", reply.cause());
+            msg.fail(500, reply.cause().getMessage());
          }
       });
    }

@@ -86,39 +86,42 @@ public class HttpProxyVerticle extends AbstractVerticle {
       final int conId = REQUEST_ID.incrementAndGet();
       LOG.info("[{}] Incoming Proxy request: {} {} {} {}", conId, req.isSSL() ? "HTTPS" : "HTTP", req.method(), req.uri(), req.version());
 
+      req.exceptionHandler(e -> LOG.error("Exception while processing response", e.getCause()));
+
       if (req.method() == HttpMethod.CONNECT) {
          HostInfo info = HostInfo.from(req.uri(), 433);
          httpsPassthrough(conId, req, info);
       } else {
          final HostInfo info = HostInfo.from(req.getHeader("Host"), HTTP_DEFAULT_PORT);
          if (LOG.isTraceEnabled()) {
-            LOG.trace("[{}] Sending request to destination {}\n-HEADER-\n{}\n-HEADER-", conId, info, toString(req.headers()));
+            LOG.trace("[{}] Sending request to destination {}\n<HEADER>\n{}\n</HEADER>", conId, info, toString(req.headers()));
          }
          final HttpClientRequest outgoingRequest = this.httpClient.request(req.method(),
                                                                            info.port,
                                                                            info.host,
                                                                            req.uri(),
                                                                            targetResponse -> processServerResponse(conId, req.response(), targetResponse)).setChunked(true);
+         outgoingRequest.exceptionHandler(e -> LOG.error("Exception while processing request", e.getCause()));
          outgoingRequest.headers().setAll(req.headers());
 
-         final ChunkDataHandler requestHandler = new ChunkDataHandler(conId, SND, req.response());
+         final ChunkDataHandler requestHandler = new ChunkDataHandler(conId, SND, outgoingRequest);
          req.handler(requestHandler);
          req.endHandler((v) -> requestHandler.endTransmission());
       }
    }
 
-   private void processServerResponse(final int conId, final HttpServerResponse clientResponse, final HttpClientResponse serverResponse) {
+   private void processServerResponse(final int conId, final HttpServerResponse respToClient, final HttpClientResponse respFromServer) {
 
       if (LOG.isTraceEnabled()) {
-         LOG.trace("[{}] Received response {} {},\n-HEADER-\n{}\n-HEADER-", conId, serverResponse.statusCode(), serverResponse.statusMessage(), toString(serverResponse.headers()));
+         LOG.trace("[{}] Received response {} {},\n-HEADER-\n{}\n-HEADER-", conId, respFromServer.statusCode(), respFromServer.statusMessage(), toString(respFromServer.headers()));
       }
 
-      final ChunkDataHandler responseHandler = new ChunkDataHandler(conId, RCV, clientResponse);
-      clientResponse.setChunked(true);
-      clientResponse.setStatusCode(serverResponse.statusCode());
-      clientResponse.headers().setAll(serverResponse.headers());
-      serverResponse.handler(responseHandler);
-      serverResponse.endHandler((v) -> responseHandler.endTransmission());
+      final ChunkDataHandler responseHandler = new ChunkDataHandler(conId, RCV, respToClient);
+      respToClient.setChunked(true);
+      respToClient.setStatusCode(respFromServer.statusCode());
+      respToClient.headers().setAll(respFromServer.headers());
+      respFromServer.handler(responseHandler);
+      respFromServer.endHandler((v) -> responseHandler.endTransmission());
    }
 
    private String toString(final MultiMap headers) {
@@ -147,6 +150,8 @@ public class HttpProxyVerticle extends AbstractVerticle {
     *         the information of the target host
     */
    private void httpsPassthrough(final int conId, final HttpServerRequest req, final HostInfo info) {
+
+      LOG.debug("[{}] Dispatching https request {} -> {}", conId, req.absoluteURI(), info);
 
       netClient.connect(info.port, info.host, result -> {
 
@@ -249,7 +254,6 @@ public class HttpProxyVerticle extends AbstractVerticle {
       @Override
       public void handle(final Buffer data) {
 
-         stats.receivedBytes(transmissionDirection, data.length());
 
          if (LOG.isTraceEnabled()) {
             LOG.trace("[{}] {}: {} bytes\n---\n{}\n---", conId, transmissionDirection, data.length(), data.toString(Charset.defaultCharset()));
@@ -257,6 +261,7 @@ public class HttpProxyVerticle extends AbstractVerticle {
             LOG.debug("[{}] {}: {} bytes", conId, transmissionDirection, data.length());
          }
 
+         stats.receivedBytes(transmissionDirection, data.length());
          dataInFlight++;
 
          Vertx.currentContext().owner().eventBus().send(transmissionDirection.getAddress(), data, transmitData(data));

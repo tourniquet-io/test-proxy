@@ -28,6 +28,12 @@ public class MainProxyVerticle extends AbstractVerticle {
 
       JsonObject config = new JsonObject().put("proxyPort", Integer.getInteger("proxyPort",28080)).put("configPort", Integer.getInteger("configPort", 7099));
 
+
+
+      LOG.info("Debug enabled: {}", LOG.isDebugEnabled());
+      LOG.debug("Trace enabled: {}", LOG.isTraceEnabled());
+      LOG.trace("Starting Vert.x Event-Loop");
+
       Vertx vertx = Vertx.vertx();
       vertx.deployVerticle(MainProxyVerticle.class.getName(), new DeploymentOptions().setConfig(config));
 
@@ -46,7 +52,7 @@ public class MainProxyVerticle extends AbstractVerticle {
       vertx.deployVerticle(ConfigVerticle.class.getName(), new DeploymentOptions().setConfig(config), configFuture);
       vertx.deployVerticle(DataDispatcherVerticle.class.getName(), complete -> vertx.deployVerticle(DropDataVerticle.class.getName(), handlerFuture));
 
-      CompositeFuture.all(httpFuture,configFuture,handlerFuture).setHandler(complete -> {
+      CompositeFuture.all(httpFuture, configFuture, handlerFuture).setHandler(complete -> {
          LOG.info("Test Proxy running");
          startFuture.complete();
       });
