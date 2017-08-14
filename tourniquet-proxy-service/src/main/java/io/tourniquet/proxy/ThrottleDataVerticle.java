@@ -12,8 +12,6 @@ public class ThrottleDataVerticle extends AbstractVerticle {
         vertx.eventBus().consumer("outgoing", this::outgoingDataHandler);
     }
 
-
-
     private void incomingDataHandler(final Message<Object> msg) {
         //drop the data by returning an empty buffer
         msg.reply(Buffer.buffer());
