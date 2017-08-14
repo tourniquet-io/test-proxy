@@ -14,11 +14,7 @@ public class MainProxyVerticle extends AbstractVerticle {
 
    private static final Logger LOG = getLogger(MainProxyVerticle.class);
 
-
-
    public static void main(String... args) {
-
-
 
       // We set this property to prevent Vert.x caching files loaded from the classpath on disk
       // This means if you edit the static files in your IDE then the next time they are served the new ones will
@@ -27,8 +23,6 @@ public class MainProxyVerticle extends AbstractVerticle {
       System.setProperty("vertx.disableFileCaching", "true");
 
       JsonObject config = new JsonObject().put("proxyPort", Integer.getInteger("proxyPort",28080)).put("configPort", Integer.getInteger("configPort", 7099));
-
-
 
       LOG.info("Debug enabled: {}", LOG.isDebugEnabled());
       LOG.debug("Trace enabled: {}", LOG.isTraceEnabled());
