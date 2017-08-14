@@ -2,14 +2,17 @@ package io.tourniquet.proxy;
 
 import static io.tourniquet.proxy.TransmissionDirection.RCV;
 import static io.tourniquet.proxy.TransmissionDirection.SND;
+import static java.util.stream.Collectors.toMap;
 import static org.slf4j.LoggerFactory.getLogger;
 
 import java.nio.charset.Charset;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.AsyncResult;
+import io.vertx.core.CompositeFuture;
 import io.vertx.core.Future;
 import io.vertx.core.Handler;
 import io.vertx.core.MultiMap;
@@ -29,6 +32,7 @@ import io.vertx.core.json.JsonObject;
 import io.vertx.core.net.NetClient;
 import io.vertx.core.net.NetSocket;
 import io.vertx.core.streams.WriteStream;
+import io.vertx.ext.dropwizard.MetricsService;
 
 /**
  * Created on 26.06.2017.
@@ -59,14 +63,34 @@ public class HttpProxyVerticle extends AbstractVerticle {
     */
    private HttpServer httpServer;
    private Statistics stats;
+   private Optional<HostInfo> extProxy;
 
    @Override
    public void start(final Future<Void> startFuture) throws Exception {
 
       JsonObject config = config();
       final int httpPort = config.getInteger("proxyPort", 28080);
+
+      if (config.containsKey("proxy")) {
+         final JsonObject proxyConfig = config.getJsonObject("proxy");
+         LOG.info("Using external proxy on {}:{}", proxyConfig.getString("host"), proxyConfig.getInteger("port"));
+         this.extProxy = Optional.of(HostInfo.from(proxyConfig.getString("host"), proxyConfig.getInteger("port")));
+      } else {
+         this.extProxy = Optional.empty();
+      }
+
       this.netClient = vertx.createNetClient();
-      this.httpClient = vertx.createHttpClient(new HttpClientOptions());
+      /*
+       * we have to enable pipelining because other-wise keep-alive connections are not re-used.
+       */
+      //TODO make these http client settings externally configurable
+      HttpClientOptions clientOpts = new HttpClientOptions();
+      clientOpts.setMaxPoolSize(1024);
+      clientOpts.setKeepAlive(true);
+      clientOpts.setIdleTimeout(60);
+      clientOpts.setPipeliningLimit(1000);
+      clientOpts.setPipelining(true);
+      this.httpClient = vertx.createHttpClient(clientOpts);
 
       this.httpOpts = new HttpServerOptions().setPort(httpPort);
       this.httpServer = vertx.createHttpServer(httpOpts).requestHandler(this::processRequest).listen(result -> {
@@ -78,6 +102,13 @@ public class HttpProxyVerticle extends AbstractVerticle {
 
       vertx.eventBus().consumer("/stats/get", msg -> msg.reply(this.stats.toJsonObject()));
       vertx.setPeriodic(1000, v -> vertx.eventBus().publish("/stats", this.stats.toJsonObject()));
+
+      vertx.setPeriodic(10000, v -> {
+         MetricsService metricsService = MetricsService.create(vertx);
+         JsonObject metrics = metricsService.getMetricsSnapshot("vertx.http.clients");
+         System.out.println(metrics);
+      });
+
    }
 
    private void processRequest(final HttpServerRequest req) {
@@ -89,24 +120,9 @@ public class HttpProxyVerticle extends AbstractVerticle {
       req.exceptionHandler(e -> LOG.error("Exception while processing response", e.getCause()));
 
       if (req.method() == HttpMethod.CONNECT) {
-         HostInfo info = HostInfo.from(req.uri(), 433);
-         httpsPassthrough(conId, req, info);
+         httpsPassthrough(conId, req, HostInfo.from(req.uri(), 433));
       } else {
-         final HostInfo info = HostInfo.from(req.getHeader("Host"), HTTP_DEFAULT_PORT);
-         if (LOG.isTraceEnabled()) {
-            LOG.trace("[{}] Sending request to destination {}\n<HEADER>\n{}\n</HEADER>", conId, info, toString(req.headers()));
-         }
-         final HttpClientRequest outgoingRequest = this.httpClient.request(req.method(),
-                                                                           info.port,
-                                                                           info.host,
-                                                                           req.uri(),
-                                                                           targetResponse -> processServerResponse(conId, req.response(), targetResponse)).setChunked(true);
-         outgoingRequest.exceptionHandler(e -> LOG.error("Exception while processing request", e.getCause()));
-         outgoingRequest.headers().setAll(req.headers());
-
-         final ChunkDataHandler requestHandler = new ChunkDataHandler(conId, SND, outgoingRequest);
-         req.handler(requestHandler);
-         req.endHandler((v) -> requestHandler.endTransmission());
+         httpPassthrough(conId, req, HostInfo.from(req.getHeader("Host"), HTTP_DEFAULT_PORT));
       }
    }
 
@@ -124,19 +140,32 @@ public class HttpProxyVerticle extends AbstractVerticle {
       respFromServer.endHandler((v) -> responseHandler.endTransmission());
    }
 
-   private String toString(final MultiMap headers) {
+   /**
+    * Handles the socketPassthrough of non-encrypted http request.
+    *
+    * @param conId
+    *         the current request id
+    * @param req
+    *         the incoming client request
+    * @param info
+    *         the host info of the remote target server.
+    */
+   private void httpPassthrough(final int conId, final HttpServerRequest req, final HostInfo info) {
 
-      final StringBuilder buf = new StringBuilder(128);
-      boolean first = true;
-      for (Map.Entry<String, String> entry : headers.entries()) {
-         if (first) {
-            first = false;
-         } else {
-            buf.append('\n');
-         }
-         buf.append(entry.getKey()).append(':').append(entry.getValue());
+      final HostInfo target = extProxy.orElse(info);
+//      final HostInfo target = info;
+
+      if (LOG.isTraceEnabled()) {
+         LOG.trace("[{}] Sending request to destination {}\n<HEADER>\n{}\n</HEADER>", conId, info, toString(req.headers()));
       }
-      return buf.toString();
+      final HttpClientRequest outgoingRequest = this.httpClient.request(req.method(), target.port, target.host, req.uri());
+      outgoingRequest.handler(targetResponse -> processServerResponse(conId, req.response(), targetResponse)).setChunked(true);
+      outgoingRequest.exceptionHandler(e -> LOG.error("Exception while processing request", e.getCause()));
+      outgoingRequest.headers().setAll(req.headers());
+
+      final ChunkDataHandler requestHandler = new ChunkDataHandler(conId, SND, outgoingRequest);
+      req.handler(requestHandler);
+      req.endHandler((v) -> requestHandler.endTransmission());
    }
 
    /**
@@ -151,36 +180,67 @@ public class HttpProxyVerticle extends AbstractVerticle {
     */
    private void httpsPassthrough(final int conId, final HttpServerRequest req, final HostInfo info) {
 
-      LOG.debug("[{}] Dispatching https request {} -> {}", conId, req.absoluteURI(), info);
+      if (extProxy.isPresent()) {
+         final HostInfo proxyInfo = extProxy.get();
 
-      netClient.connect(info.port, info.host, result -> {
+         final HttpClientRequest proxyRequest = httpClient.request(HttpMethod.CONNECT, proxyInfo.port, proxyInfo.host, info.host + ":" + info.port);
+         proxyRequest.handler(resp -> socketPassthrough(conId, req, resp.netSocket()).setHandler(v -> {
+            handleClose(conId, resp.netSocket());
+            handleClose(conId, req.netSocket());
+         }));
+         proxyRequest.exceptionHandler(e -> LOG.error("Exception while processing request", e.getCause()));
+         proxyRequest.headers().setAll(req.headers().entries().stream().filter(e -> !e.getKey().endsWith("Connection")).collect(toMap(Map.Entry::getKey, Map.Entry::getValue)));
+         proxyRequest.end();
 
-         if (result.succeeded()) {
+      } else {
+         LOG.debug("[{}] Dispatching https request {} -> {}", conId, req.absoluteURI(), info);
+         netClient.connect(info.port, info.host, resp -> {
+            if (resp.succeeded()) {
+               socketPassthrough(conId, req, resp.result()).setHandler(v -> {
+                  handleClose(conId, resp.result());
+                  handleClose(conId, req.netSocket());
+               });
+            } else {
+               LOG.warn("[{}] Connecting remote host failed", conId, resp.cause());
+            }
+         });
+      }
+   }
 
-            confirmProxyHttpsConnection(conId, req);
+   /**
+    * Passes through all binary data from the client to the destination socket.
+    *
+    * @param conId
+    *         the current connection id
+    * @param clientRequest
+    *         the initial client request. A response is sent to the client to confirm the connection has been established. All further binary data is streamed directly to the
+    *         destination socket.
+    * @param dstSocket
+    */
+   private CompositeFuture socketPassthrough(final int conId, final HttpServerRequest clientRequest, final NetSocket dstSocket) {
 
-            final NetSocket src = req.netSocket();
-            final NetSocket dst = result.result();
+      confirmProxyHttpsConnection(conId, clientRequest);
 
-            final ChunkDataHandler srcHandler = new ChunkDataHandler(conId, SND, dst).onClose(() -> handleClose(conId, dst));
-            final ChunkDataHandler dstHandler = new ChunkDataHandler(conId, RCV, src).onClose(() -> handleClose(conId, src));
+      final NetSocket srcSocket = clientRequest.netSocket();
 
-            src.handler(srcHandler);
-            dst.handler(dstHandler);
+      final Future<Void> srcClosed = connectSockets(conId, srcSocket, dstSocket, SND);
+      final Future<Void> dstClosed = connectSockets(conId, dstSocket, srcSocket, RCV);
 
-            src.closeHandler(v -> {
-               LOG.debug("[{}] Connection closed by client", conId);
-               srcHandler.endTransmission();
-            });
-            dst.closeHandler(v -> {
-               LOG.debug("[{}] Connection closed by server", conId);
-               dstHandler.endTransmission();
-            });
+      return CompositeFuture.all(srcClosed, dstClosed);
+   }
 
-         } else {
-            LOG.warn("[{}] Connecting remote host failed", conId, result.cause());
-         }
+   private Future<Void> connectSockets(final int conId, final NetSocket srcSocket, final NetSocket dstSocket, final TransmissionDirection dir) {
+
+      final Future<Void> srcClosed = Future.future();
+      final ChunkDataHandler srcHandler = new ChunkDataHandler(conId, dir, dstSocket);
+      srcSocket.exceptionHandler(e -> LOG.error("Error on socket", e.getCause()));
+      srcSocket.handler(srcHandler);
+      srcSocket.closeHandler(v -> {
+         LOG.debug("[{}] Socket closed by client", conId);
+         srcHandler.endTransmission();
+         srcClosed.complete();
       });
+      return srcClosed;
    }
 
    /**
@@ -192,7 +252,7 @@ public class HttpProxyVerticle extends AbstractVerticle {
     */
    private void confirmProxyHttpsConnection(final int conId, final HttpServerRequest req) {
 
-      LOG.info("[{}] Confirming Proxy Connection", conId);
+      LOG.debug("[{}] Confirming Proxy Connection", conId);
       req.response().setStatusCode(200).setStatusMessage("Connection established").putHeader("Proxy-agent", "Test-Proxy 1.0").end();
    }
 
@@ -208,6 +268,21 @@ public class HttpProxyVerticle extends AbstractVerticle {
     * Helper class to parse hostname and port from a string hostname:port with the option to define a default port
     * during parsing
     */
+   private String toString(final MultiMap headers) {
+
+      final StringBuilder buf = new StringBuilder(128);
+      boolean first = true;
+      for (Map.Entry<String, String> entry : headers.entries()) {
+         if (first) {
+            first = false;
+         } else {
+            buf.append('\n');
+         }
+         buf.append(entry.getKey()).append(':').append(entry.getValue());
+      }
+      return buf.toString();
+   }
+
    private static class HostInfo {
 
       final String host;
@@ -242,6 +317,7 @@ public class HttpProxyVerticle extends AbstractVerticle {
       private int dataInFlight = 0;
       private boolean indicateEnd;
       private Runnable onCloseHandler;
+      private boolean closed = false;
 
       public ChunkDataHandler(final int conId, final TransmissionDirection transmissionDirection, final WriteStream<Buffer> out) {
 
@@ -253,7 +329,6 @@ public class HttpProxyVerticle extends AbstractVerticle {
 
       @Override
       public void handle(final Buffer data) {
-
 
          if (LOG.isTraceEnabled()) {
             LOG.trace("[{}] {}: {} bytes\n---\n{}\n---", conId, transmissionDirection, data.length(), data.toString(Charset.defaultCharset()));
@@ -276,6 +351,7 @@ public class HttpProxyVerticle extends AbstractVerticle {
          if (dataInFlight == 0) {
             finalizeTransmission();
          } else {
+            LOG.debug("[{}] mark end transmission ", this.conId);
             indicateEnd = true;
          }
       }
@@ -315,9 +391,14 @@ public class HttpProxyVerticle extends AbstractVerticle {
 
       private void finalizeTransmission() {
 
-         out.end();
-         if (onCloseHandler != null) {
-            onCloseHandler.run();
+         if (!closed) {
+            LOG.debug("[{}] finalize transmission", conId);
+
+//            out.end();
+            if (onCloseHandler != null) {
+               onCloseHandler.run();
+            }
+            closed = true;
          }
       }
 

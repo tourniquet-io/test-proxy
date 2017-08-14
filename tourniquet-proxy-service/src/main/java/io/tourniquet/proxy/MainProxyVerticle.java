@@ -7,18 +7,17 @@ import io.vertx.core.CompositeFuture;
 import io.vertx.core.DeploymentOptions;
 import io.vertx.core.Future;
 import io.vertx.core.Vertx;
+import io.vertx.core.VertxOptions;
 import io.vertx.core.json.JsonObject;
+import io.vertx.ext.dropwizard.DropwizardMetricsOptions;
+import io.vertx.ext.dropwizard.Match;
 import org.slf4j.Logger;
 
 public class MainProxyVerticle extends AbstractVerticle {
 
    private static final Logger LOG = getLogger(MainProxyVerticle.class);
 
-
-
    public static void main(String... args) {
-
-
 
       // We set this property to prevent Vert.x caching files loaded from the classpath on disk
       // This means if you edit the static files in your IDE then the next time they are served the new ones will
@@ -26,15 +25,20 @@ public class MainProxyVerticle extends AbstractVerticle {
       // This is only useful for development - do not use this in a production server
       System.setProperty("vertx.disableFileCaching", "true");
 
-      JsonObject config = new JsonObject().put("proxyPort", Integer.getInteger("proxyPort",28080)).put("configPort", Integer.getInteger("configPort", 7099));
+      String proxyHost = "localhost";
+      int proxyPort = 8888;
 
-
+      JsonObject config = new JsonObject().put("proxyPort", Integer.getInteger("proxyPort", 28080))
+                                          .put("configPort", Integer.getInteger("configPort", 7099))
+                                          .put("proxy", new JsonObject().put("host", proxyHost).put("port", proxyPort));
 
       LOG.info("Debug enabled: {}", LOG.isDebugEnabled());
       LOG.debug("Trace enabled: {}", LOG.isTraceEnabled());
       LOG.trace("Starting Vert.x Event-Loop");
 
-      Vertx vertx = Vertx.vertx();
+      Vertx vertx = Vertx.vertx(new VertxOptions().setMetricsOptions(new DropwizardMetricsOptions().setEnabled(true).setJmxEnabled(true)
+                                                                     .addMonitoredHttpClientEndpoint(
+                                                                             new Match().setValue(proxyHost + ":" + proxyPort))));
       vertx.deployVerticle(MainProxyVerticle.class.getName(), new DeploymentOptions().setConfig(config));
 
    }
