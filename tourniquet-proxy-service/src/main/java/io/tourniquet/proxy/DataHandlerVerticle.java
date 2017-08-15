@@ -27,6 +27,8 @@ public abstract class DataHandlerVerticle extends AbstractVerticle {
     * An opaque string for addressing the concrete handler.
     *
     * @return
+    *  An opaque string representing the identifier of the hander. The identifier is used for building the /data and
+    *  /config eventbus addressed
     */
    protected abstract String identifier();
 
@@ -67,11 +69,13 @@ public abstract class DataHandlerVerticle extends AbstractVerticle {
    /**
     * Implement this method to handle outgoing data.
     *
-    * @param outMsg
+    * @param msg
+    *    the message carrying the buffer with the data to handle
+    *
     */
-   protected void handleData(final Message<Buffer> outMsg) {
+   protected void handleData(final Message<Buffer> msg) {
 
-      passthrough(outMsg);
+      passthrough(msg);
    }
 
 }

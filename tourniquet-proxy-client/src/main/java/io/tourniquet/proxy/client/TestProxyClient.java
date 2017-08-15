@@ -52,6 +52,7 @@ public class TestProxyClient {
     /**
      * Retrieves the current configuration of the proxy
      * @return
+     *  Configuration object for the proxy
      */
     public Config getConfig(){
 
@@ -78,6 +79,7 @@ public class TestProxyClient {
      * @param handler
      *  data handler for incoming connections
      * @return
+     *  Configuration object for the proxy
      */
     public Config setIncoming(final String handler) {
 
@@ -90,6 +92,7 @@ public class TestProxyClient {
      * @param handler
      *  data handler for outgoing connections
      * @return
+     *  Configuration object for the proxy
      */
     public Config setOutgoing(final String handler) {
 
@@ -119,6 +122,7 @@ public class TestProxyClient {
      * @param handler
      *  the name of the handler to process the data
      * @return
+     *  Configuration object for the proxy
      */
     public Config setHandler(final Direction dir, final String handler) {
 

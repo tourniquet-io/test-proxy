@@ -31,7 +31,6 @@ import io.vertx.core.json.JsonObject;
 import io.vertx.core.net.NetClient;
 import io.vertx.core.net.NetSocket;
 import io.vertx.core.streams.WriteStream;
-import io.vertx.ext.dropwizard.MetricsService;
 
 /**
  * Created on 26.06.2017.
@@ -99,11 +98,11 @@ public class HttpProxyVerticle extends AbstractVerticle {
 
         vertx.eventBus().consumer("/stats/get", msg -> msg.reply(this.stats.toJsonObject()));
         vertx.setPeriodic(1000, v -> vertx.eventBus().publish("/stats", this.stats.toJsonObject()));
-        vertx.setPeriodic(10000, v -> {
-            MetricsService metricsService = MetricsService.create(vertx);
-            System.out.println(metricsService.getMetricsSnapshot("vertx.http.clients.open-netsockets"));
+//        vertx.setPeriodic(10000, v -> {
+//            MetricsService metricsService = MetricsService.create(vertx);
+//            System.out.println(metricsService.getMetricsSnapshot("vertx.http.clients.open-netsockets"));
 //            System.out.println(metricsService.getMetricsSnapshot("vertx.http"));
-        });
+//        });
 
     }
 

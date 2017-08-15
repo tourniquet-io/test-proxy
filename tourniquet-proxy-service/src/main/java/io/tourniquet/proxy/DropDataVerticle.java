@@ -23,13 +23,13 @@ public class DropDataVerticle extends DataHandlerVerticle {
     }
 
     @Override
-    protected void handleData(final Message<Buffer> outMsg) {
+    protected void handleData(final Message<Buffer> msg) {
         if(LOG.isTraceEnabled()){
-            LOG.trace("Dropping {} bytes", outMsg.body().length());
+            LOG.trace("Dropping {} bytes", msg.body().length());
         }
 
-        vertx.eventBus().publish("/monitor", Instant.now() + " Dropping data of length " + outMsg.body().length());
-        outMsg.reply(EMPTY);
+        vertx.eventBus().publish("/monitor", Instant.now() + " Dropping data of length " + msg.body().length());
+        msg.reply(EMPTY);
     }
 
 
