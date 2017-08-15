@@ -4,7 +4,7 @@
 
     <artifactId>tourniquet-test-proxy</artifactId>
     <groupId>io.tourniquet</groupId>
-    <version>1.1-SNAPSHOT</version>
+    <version>1.1</version>
     <packaging>pom</packaging>
 
     <description>Test proxy server to mimic faulty networks in a configurable fashion</description>
