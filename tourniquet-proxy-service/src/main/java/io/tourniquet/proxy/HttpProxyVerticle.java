@@ -31,6 +31,7 @@ import io.vertx.core.json.JsonObject;
 import io.vertx.core.net.NetClient;
 import io.vertx.core.net.NetSocket;
 import io.vertx.core.streams.WriteStream;
+import io.vertx.ext.dropwizard.MetricsService;
 
 /**
  * Created on 26.06.2017.
@@ -98,11 +99,26 @@ public class HttpProxyVerticle extends AbstractVerticle {
 
         vertx.eventBus().consumer("/stats/get", msg -> msg.reply(this.stats.toJsonObject()));
         vertx.setPeriodic(1000, v -> vertx.eventBus().publish("/stats", this.stats.toJsonObject()));
-//        vertx.setPeriodic(10000, v -> {
-//            MetricsService metricsService = MetricsService.create(vertx);
-//            System.out.println(metricsService.getMetricsSnapshot("vertx.http.clients.open-netsockets"));
-//            System.out.println(metricsService.getMetricsSnapshot("vertx.http"));
-//        });
+      vertx.setPeriodic(10000, v -> {
+         MetricsService metricsService = MetricsService.create(vertx);
+         JsonObject netsockets = metricsService.getMetricsSnapshot("vertx.http.clients.open-netsockets");
+         System.out.println(netsockets);
+         System.out.println(metricsService.getMetricsSnapshot("vertx.http"));
+
+         if (netsockets.getJsonObject("vertx.http.clients.open-netsockets").getInteger("count") == clientOpts.getMaxPoolSize()) {
+            LOG.warn("HttpClient reached connection pool size limit {}", clientOpts.getMaxPoolSize());
+            restartHttpClient(clientOpts);
+         }
+      });
+
+   }
+
+   private void restartHttpClient(final HttpClientOptions clientOpts) {
+
+      LOG.info("Restarting HTTP Client");
+      httpClient.close();
+      httpClient = vertx.createHttpClient(clientOpts);
+      LOG.info("HTTP Client restarted");
 
     }
 
@@ -147,7 +163,7 @@ public class HttpProxyVerticle extends AbstractVerticle {
                                                                       proxyInfo.host,
                                                                       info.host + ":" + info.port);
             proxyRequest.handler(resp -> {
-                LOG.info("[{}] {} {}");
+            LOG.info("[{}] {} {}", conId, resp.statusCode(), resp.statusMessage());
                 if (resp.statusCode() == 200) {
                     socketPassthrough(conId, req, resp.netSocket()).setHandler(v -> {
                         req.netSocket().close();
@@ -199,16 +215,14 @@ public class HttpProxyVerticle extends AbstractVerticle {
                       info,
                       toString(req.headers()));
         }
-        final HttpClientRequest outgoingRequest = this.httpClient.request(req.method(),
-                                                                          target.port,
-                                                                          target.host,
-                                                                          req.uri());
-        outgoingRequest.handler(targetResponse -> processServerResponse(conId, req.response(), targetResponse));
+      final HttpClientRequest outgoingRequest = this.httpClient.request(req.method(), target.port, target.host, req.uri());
         outgoingRequest.setChunked(true);
         outgoingRequest.exceptionHandler(e -> LOG.error("Exception while processing request", e.getCause()));
+        outgoingRequest.handler(targetResponse -> processServerResponse(conId, req.response(), targetResponse));
         outgoingRequest.headers().setAll(req.headers());
 
-        final ChunkDataHandler requestHandler = new ChunkDataHandler(conId, SND, outgoingRequest);
+      final ChunkDataHandler requestHandler = new ChunkDataHandler(conId, SND, outgoingRequest).closeHandler(v -> outgoingRequest.end());
+
         req.handler(requestHandler);
         req.endHandler(v -> requestHandler.endTransmission());
     }
@@ -276,7 +290,7 @@ public class HttpProxyVerticle extends AbstractVerticle {
                       toString(respFromServer.headers()));
         }
 
-        final ChunkDataHandler responseHandler = new ChunkDataHandler(conId, RCV, respToClient);
+      final ChunkDataHandler responseHandler = new ChunkDataHandler(conId, RCV, respToClient).closeHandler(v -> respToClient.end());
         respToClient.setChunked(true);
         respToClient.setStatusCode(respFromServer.statusCode());
         respToClient.headers().setAll(respFromServer.headers());
