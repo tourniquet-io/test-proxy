@@ -157,11 +157,10 @@ public class HttpProxyVerticle extends AbstractVerticle {
         if (extProxy.isPresent()) {
             final HostInfo proxyInfo = extProxy.get();
             LOG.debug("[{}] Forwarding proxy request", conId);
-            req.headers().forEach(e -> LOG.info("[{}] {} -> {}", conId, e.getKey(), e.getValue()));
-            final HttpClientRequest proxyRequest = httpClient.request(HttpMethod.CONNECT,
-                                                                      proxyInfo.port,
-                                                                      proxyInfo.host,
-                                                                      info.host + ":" + info.port);
+         if(LOG.isDebugEnabled()){
+            req.headers().forEach(e -> LOG.debug("[{}] {} : {}", conId, e.getKey(), e.getValue()));
+         }
+         final HttpClientRequest proxyRequest = httpClient.request(HttpMethod.CONNECT, proxyInfo.port, proxyInfo.host, info.host + ":" + info.port);
             proxyRequest.handler(resp -> {
             LOG.info("[{}] {} {}", conId, resp.statusCode(), resp.statusMessage());
                 if (resp.statusCode() == 200) {
