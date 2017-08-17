@@ -1,11 +1,7 @@
-FROM anapsix/alpine-java
+FROM anapsix/alpine-java:8_server-jre_unlimited
 
-ARG mavenUrl = http://repo1.maven.org/maven2/io/tourniquet/tourniquet-proxy-service/1.0/tourniquet-proxy-service-1.0-jar-with-dependencies.jar
-RUN mkdir /opt/proxy && \
-    apk add --update curl && \
-    curl --output /opt/proxy/test-proxy.jar  && \
-    apk del curl && \
-    rm -rf /tmp/* /var/cache/apk/*
+ADD target/tourniquet-proxy-standalone.jar /opt/proxy/tourniquet-proxy-standalone.jar
 
 EXPOSE 7099 28080
-CMD java -jar /opt/proxy/test-proxy.jar
+
+CMD /usr/bin/java -jar /opt/proxy/tourniquet-proxy-standalone.jar

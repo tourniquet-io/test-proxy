@@ -69,7 +69,7 @@
         <plugins>
             <plugin>
                 <artifactId>maven-assembly-plugin</artifactId>
-                <version>3.0.0</version>
+                <version>3.1.0</version>
                 <executions>
                     <execution>
                         <goals>
@@ -79,7 +79,7 @@
                     </execution>
                 </executions>
                 <configuration>
-                    <finalName>tourniquet-proxy-${project.version}-standalone</finalName>
+                    <finalName>tourniquet-proxy-standalone</finalName>
                     <appendAssemblyId>false</appendAssemblyId>
                     <archive>
                         <manifest>
@@ -93,5 +93,43 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <profile>
+            <id>docker</id>
+            <activation>
+                <property>
+                    <name>env.DOCKER_HOST</name>
+                </property>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>io.fabric8</groupId>
+                        <artifactId>docker-maven-plugin</artifactId>
+                        <version>0.21.0</version>
+                        <configuration>
+                            <images>
+                                <image>
+                                    <name>tourniquet.io/testproxy:${project.version}</name>
+                                    <build>
+                                        <dockerFileDir>${project.basedir}</dockerFileDir>
+                                    </build>
+                                </image>
+                            </images>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <phase>install</phase>
+                                <goals>
+                                    <goal>build</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 
 </project>
